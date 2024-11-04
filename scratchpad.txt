@@ -1,0 +1,19 @@
+############################ 11/6/2024 ############################
+
+############################ 11/3/2024 ############################
+
+I tackled a persistent issue related to unseen labels during the validation process, which was causing errors when training and testing the models. 
+I resolved it by mapping unknown labels to a placeholder value, which allowed the training process to continue smoothly. This fix helped me proceed without getting stuck at the label encoding stage.
+
+I also implemented data balancing using `RandomOverSampler` to deal with the class imbalance problem in the dataset. Additionally, I added hyperparameter tuning for the Random Forest model using `GridSearchCV` to optimize performance.
+For the transformer model, I increased the number of training epochs to help improve accuracy.
+
+After these adjustments, both models were successfully trained and evaluated, although the accuracy is still quite low—there’s definitely more work to be done to improve their performance. 
+I'll need to explore further feature engineering, better data preparation, or even tweaking model architectures.
+
+Also... I'm keeping the model on my local machine. It's too large to commit to the repo and I nuked my branch in the attempt to push it lol
+
+Next steps:
+- Dive deeper into feature engineering to enhance model performance.
+- Investigate alternative models or architectures that might be better suited for this type of classification task.
+- Potentially augment the dataset to improve the quality of training data for the transformer model.
