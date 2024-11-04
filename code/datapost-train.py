@@ -11,7 +11,8 @@ from sklearn.preprocessing import LabelEncoder
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder
 from imblearn.over_sampling import RandomOverSampler
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import ParameterGrid
+from tqdm import tqdm
 
 
 def load_prepared_data():
@@ -80,31 +81,58 @@ def load_prepared_data():
     return X_train, X_val, X_test, y_train, y_val, y_test, X_train_description, X_val_description, X_test_description, label_encoder
 
 
-def train_random_forest(X_train, y_train, X_val, y_val):
-    # Hyperparameter tuning using GridSearchCV
+def train_random_forest_with_progress(X_train, y_train, X_val, y_val):
+    # Hyperparameter tuning using manual grid search with progress bar
     param_grid = {
         'n_estimators': [100, 200],
         'max_depth': [None, 10, 20],
         'min_samples_split': [2, 5]
     }
-    rf = RandomForestClassifier(random_state=42)
-    grid_search = GridSearchCV(estimator=rf, param_grid=param_grid, cv=3, n_jobs=1, verbose=2)
-    grid_search.fit(X_train, y_train)
+    best_model = None
+    best_score = 0
+    total_iterations = len(ParameterGrid(param_grid))
 
-    # Best model from GridSearch
-    rf_model = grid_search.best_estimator_
+    # Wrap ParameterGrid with tqdm for progress indication
+    for params in tqdm(ParameterGrid(param_grid), total=total_iterations, desc="Grid Search Progress"):
+        # Train Random Forest with specific parameters
+        rf = RandomForestClassifier(**params, random_state=42)
+        rf.fit(X_train, y_train)
 
-    # Evaluate the model
-    y_val_pred = rf_model.predict(X_val)
-    accuracy = accuracy_score(y_val, y_val_pred)
-    print("Random Forest Validation Accuracy:", accuracy)
+        # Evaluate the model on validation set
+        y_val_pred = rf.predict(X_val)
+        score = accuracy_score(y_val, y_val_pred)
+
+        # Save the best model
+        if score > best_score:
+            best_score = score
+            best_model = rf
+
+    print(f"Best Model Validation Accuracy: {best_score}")
     print("Classification Report:\n", classification_report(y_val, y_val_pred, zero_division=1))
 
-    # Save the trained model
+    # Save the best model
     with open("models/random_forest_model.pkl", "wb") as f:
-        pickle.dump(rf_model, f)
+        pickle.dump(best_model, f)
 
-    return rf_model
+    return best_model
+
+
+def evaluate_model(model, X_test, y_test, model_type="random_forest", X_test_description=None):
+    # Evaluate the model using the test set
+    if model_type == "random_forest":
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        print("Random Forest Test Accuracy:", accuracy)
+        print("Classification Report:\n", classification_report(y_test, y_pred, zero_division=1))
+    elif model_type == "transformer" and X_test_description is not None:
+        tokenizer = AutoTokenizer.from_pretrained("models/transformer_tokenizer")
+        test_encodings = tokenizer(list(X_test_description), truncation=True, padding=True, max_length=128, return_tensors="pt")
+        model.eval()
+        with torch.no_grad():
+            outputs = model(**test_encodings)
+            predictions = torch.argmax(outputs.logits, dim=-1)
+            accuracy = accuracy_score(y_test, predictions)
+            print("Transformer Test Accuracy:", accuracy)
 
 
 def train_transformer(X_train_description, y_train, X_val_description, y_val):
@@ -146,25 +174,6 @@ def train_transformer(X_train_description, y_train, X_val_description, y_val):
 
     return model, tokenizer
 
-
-def evaluate_model(model, X_test, y_test, model_type="random_forest", X_test_description=None):
-    # Evaluate the model using the test set
-    if model_type == "random_forest":
-        y_pred = model.predict(X_test)
-        accuracy = accuracy_score(y_test, y_pred)
-        print("Random Forest Test Accuracy:", accuracy)
-        print("Classification Report:\n", classification_report(y_test, y_pred, zero_division=1))
-    elif model_type == "transformer" and X_test_description is not None:
-        tokenizer = AutoTokenizer.from_pretrained("models/transformer_tokenizer")
-        test_encodings = tokenizer(list(X_test_description), truncation=True, padding=True, max_length=128, return_tensors="pt")
-        model.eval()
-        with torch.no_grad():
-            outputs = model(**test_encodings)
-            predictions = torch.argmax(outputs.logits, dim=-1)
-            accuracy = accuracy_score(y_test, predictions)
-            print("Transformer Test Accuracy:", accuracy)
-
-
 def generate_splunk_detection_yaml(model, user_input, model_type="random_forest"):
     # Generate a Splunk detection rule based on user input
     detection = {}
@@ -203,7 +212,7 @@ if __name__ == "__main__":
         os.makedirs("models")
 
     # Train and evaluate Random Forest model
-    rf_model = train_random_forest(X_train, y_train, X_val, y_val)
+    rf_model = train_random_forest_with_progress(X_train, y_train, X_val, y_val)
     evaluate_model(rf_model, X_test, y_test, model_type="random_forest")
 
     # Train and evaluate Transformer model
